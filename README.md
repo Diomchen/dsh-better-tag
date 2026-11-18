@@ -37,6 +37,10 @@ DSH 原生的状态点回答的是「AI 交回了没有」：待你、交回未�
 
 ## 截图
 
+> 标「实机」的图来自真实 DSH 窗口；其余为**示例数据**渲染，使用与插件相同的样式和组件结构，方便一次看全功能。
+
+### 侧栏与标题旁（实机）
+
 **侧栏行尾**：标签排在时间之前，最多 2 枚，多出来的收成 `+N`。
 
 <img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/row-order.png" alt="侧栏行尾：产品、DSH 两枚标签 +1，排在时间之前" width="720">
@@ -45,9 +49,37 @@ DSH 原生的状态点回答的是「AI 交回了没有」：待你、交回未�
 
 <img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/header-tags.png" alt="会话标题旁的三枚标签与 + 标签按钮" width="1000">
 
-**悬停卡片**：行悬停时显示全部标签（含临时标签）与完成章。
+### 悬停、完成章与行菜单（示例数据）
 
-<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/hover-card.png" alt="会话行悬停卡片里显示全部标签" width="360">
+行悬停时显示全部标签（含临时标签）与完成章；行尾 ✓ 落章/取消，「…」菜单里还有「标签…」「取消完成章」「清除临时标签」。
+
+<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/sidebar-hover.png" alt="侧栏行悬停：全部标签、完成章与落章操作" width="860">
+
+<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/row-menu.png" alt="会话行 … 菜单：标签、取消完成章、清除临时标签" width="560">
+
+### 会话总览（示例数据）
+
+跨全部 workspace 平铺：状态计数（待你 / AI 已交回 / 进行中 / 已完成 / 共）、按标签筛选、显示归档开关，点行直接进入会话；右上角是导出标签包、导入标签包和管理标签。
+
+<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/overview.png" alt="会话总览：状态计数、标签筛选、归档开关与会话列表" width="1000">
+
+### 标签选择器与临时标签（示例数据）
+
+勾选/取消库里的标签、直接新建标签；**临时标签**只挂当前会话，可「固定」进标签库或移除；底部入口进入管理标签。
+
+<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/picker.png" alt="标签选择器：库标签勾选、新建、临时标签和管理入口" width="820">
+
+### 管理标签（示例数据）
+
+改名、12 色改色、删除；删除会级联移除所有会话上的引用。
+
+<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/manage.png" alt="管理标签：改名、改色、删除" width="820">
+
+### 标签包（示例数据）
+
+粘贴 JSON 或选择文件导入；导入按名字合并，并报告新增 / 跳过 / 冲突。导出是总览右上角的「导出标签包」，直接下载 JSON。
+
+<img src="https://raw.githubusercontent.com/Diomchen/dsh-better-tag/main/docs/screenshots/pack.png" alt="导入标签包：JSON 文本、选择文件和导入结果报告" width="820">
 
 ## 安装
 
