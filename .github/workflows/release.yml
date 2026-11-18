@@ -7,6 +7,12 @@ name: Release
 #
 # The tag must match `version` in package.json; a mismatch fails the run
 # before anything is published.
+#
+# Publishing uses the NPM_TOKEN repository secret (a granular npm "Publish"
+# token). npm is retiring 2FA-bypass tokens for direct publishing, so the
+# long-term setup is Trusted Publishing: on npmjs.com open the package's
+# Settings -> Trusted publishing, add this repository and this workflow file,
+# then delete the NPM_TOKEN secret.
 
 on:
   push:
