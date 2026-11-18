@@ -10,9 +10,14 @@ name: Release
 #
 # Publishing uses the NPM_TOKEN repository secret (a granular npm "Publish"
 # token). npm is retiring 2FA-bypass tokens for direct publishing, so the
-# long-term setup is Trusted Publishing: on npmjs.com open the package's
-# Settings -> Trusted publishing, add this repository and this workflow file,
-# then delete the NPM_TOKEN secret.
+# long-term setup is Trusted Publishing:
+#   1. enable full 2FA on the npm account (email OTP is not enough — the
+#      trust API answers 403 "Please enable 2fa for your account");
+#   2. on npmjs.com open the package's Settings -> Trusted Publisher, add
+#      repository Diomchen/dsh-better-tag and workflow release.yml, and
+#      allow "npm publish";
+#   3. delete the NPM_TOKEN secret.
+# docs/RELEASING.md walks through the same steps.
 
 on:
   push:
@@ -35,8 +40,22 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Trusted publishing needs npm >= 11.5.1; Node 24 ships npm 11.
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      - name: Check npm supports trusted publishing
+        run: |
+          set -euo pipefail
+          VERSION="$(npm --version)"
+          echo "npm $VERSION"
+          MAJOR="${VERSION%%.*}"
+          REST="${VERSION#*.}"
+          MINOR="${REST%%.*}"
+          if [ "$MAJOR" -lt 11 ] || { [ "$MAJOR" -eq 11 ] && [ "$MINOR" -lt 5 ]; }; then
+            echo "npm $VERSION is too old for trusted publishing (needs 11.5.1+)"
+            exit 1
+          fi
 
       - name: Verify tag matches package version
         run: |

@@ -104,7 +104,7 @@ npm run check   # node --check 全部源文件
 npm pack --dry-run   # 看会发出去的包内容
 ```
 
-发布走 tag：`v*` tag 会触发 GitHub Actions —— 跑测试、建 GitHub Release（附 tarball）、`npm publish`。
+发布走 tag：`v*` tag 会触发 GitHub Actions —— 跑测试、建 GitHub Release（附 tarball）、`npm publish`。流程和 Trusted Publishing 迁移见 [docs/RELEASING.md](docs/RELEASING.md)。
 
 ## 已知边界
 
