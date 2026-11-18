@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.tgz
+*.log
+dist/
+coverage/
+
+# Internal planning artifacts (spec, probes, verification runs) stay local.
+.scratch/

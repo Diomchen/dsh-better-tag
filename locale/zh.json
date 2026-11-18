@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "会话标签",
+    "description": "给会话贴扁平标签、落一枚持久的「完成」章：侧栏行尾、悬停卡片与标题旁都能看到标签，另有跨全部 workspace、按状态计数与标签筛选的会话总览。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}

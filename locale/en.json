@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Session tags",
+    "description": "Flat session tags with a persistent done stamp: tags in the sidebar row, the hover card and beside the title, plus a cross-workspace overview with status counts and tag filters.",
+    "detail": "docs/DETAIL.md"
+  }
+}

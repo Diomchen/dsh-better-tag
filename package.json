@@ -1,0 +1,68 @@
+{
+  "name": "dsh-better-tag",
+  "version": "0.1.0",
+  "description": "会话标签与完成章：侧栏标签、标题旁编辑、跨 workspace 总览。 · Flat session tags and a persistent done stamp for DeepSeek Harness.",
+  "type": "module",
+  "main": "index.js",
+  "icon": "icon.svg",
+  "license": "MIT",
+  "author": "Diomchen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Diomchen/dsh-better-tag.git"
+  },
+  "homepage": "https://github.com/Diomchen/dsh-better-tag#readme",
+  "bugs": {
+    "url": "https://github.com/Diomchen/dsh-better-tag/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "session",
+    "tags",
+    "overview"
+  ],
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "docs/DETAIL.md",
+    "docs/DETAIL.zh.md",
+    "docs/preview.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check index.js && node --check client.js && node --check src/store.js && node --check src/http.js",
+    "prepack": "npm run check && npm test"
+  }
+}
