@@ -805,9 +805,10 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ */
 
     const CSS = `
-.bt-row-tags{display:inline-flex;align-items:center;gap:3px;overflow:hidden;flex:0 1 auto;order:-1}
+.bt-row-tags{display:inline-flex;align-items:center;gap:3px;overflow:hidden;flex:0 1 auto}
 [class*="rowResting"]{display:flex;align-items:center}
 [class*="rowResting"] > span:has(.bt-row-tags){order:-1}
+[class*="rowResting"] .bt-row-tags{order:-1}
 .bt-chip{display:inline-flex;align-items:center;height:16px;max-width:64px;padding:0 5px;border-radius:3px;border:1px solid transparent;font-size:10px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
 .bt-chip-button{cursor:pointer;font:inherit;font-size:10px}
 .bt-chip.is-temp{border-style:dashed;background:transparent}
