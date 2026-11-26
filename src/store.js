@@ -49,9 +49,39 @@ function normalizeName (raw) {
   return name
 }
 
-function normalizeColor (raw) {
+function parseColor (raw) {
   if (typeof raw === 'string' && HEX.test(raw)) return raw.toLowerCase()
-  return PALETTE[0]
+  return null
+}
+
+function normalizeColor (raw) {
+  return parseColor(raw) ?? PALETTE[0]
+}
+
+/**
+ * Pick the palette color used least across the given tag records.
+ *
+ * A brand-new vocabulary has twelve equally unused colors, so the random
+ * source picks freely; once colors repeat, the quiet ones win first. This is
+ * still a fixed-palette choice — no arbitrary hues enter the store.
+ *
+ * @param {{ tags?: object[], extra?: object[], exclude?: string|null, rng?: Function }} options - color context and random source.
+ * @returns one hex color from PALETTE.
+ */
+export function pickTagColor ({ tags = [], extra = [], exclude = null, rng = Math.random } = {}) {
+  const counts = new Map()
+  for (const tag of [...tags, ...extra]) {
+    if (typeof tag?.color !== 'string') continue
+    counts.set(tag.color, (counts.get(tag.color) ?? 0) + 1)
+  }
+  const scored = PALETTE
+    .filter(color => color !== exclude)
+    .map(color => ({ color, count: counts.get(color) ?? 0 }))
+  if (scored.length === 0) return PALETTE[0]
+  const least = Math.min(...scored.map(entry => entry.count))
+  const pool = scored.filter(entry => entry.count === least).map(entry => entry.color)
+  const index = Math.min(pool.length - 1, Math.floor(rng() * pool.length))
+  return pool[index] ?? PALETTE[0]
 }
 
 function normalizeTag (record) {
@@ -66,7 +96,7 @@ function normalizeTag (record) {
   }
 }
 
-function normalizeInlineTags (value) {
+function normalizeInlineTags (value, nextColor) {
   if (!Array.isArray(value)) return []
   const seen = new Set()
   const out = []
@@ -77,7 +107,8 @@ function normalizeInlineTags (value) {
     const key = name.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ name, color: normalizeColor(item.color) })
+    const color = parseColor(item.color) ?? (typeof nextColor === 'function' ? nextColor(out) : PALETTE[0])
+    out.push({ name, color })
     if (out.length >= MAX_INLINE_TAGS) break
   }
   return out
@@ -98,10 +129,10 @@ function normalizeSession (sessionId, record) {
 
 /**
  * Build the store and start loading its document.
- * @param {{ dir: string, log?: Pick<Console, 'warn'> }} options - store location and logger.
+ * @param {{ dir: string, log?: Pick<Console, 'warn'>, rng?: () => number }} options - store location, logger, and random source.
  * @returns the store handle.
  */
-export function createStore ({ dir, log = console }) {
+export function createStore ({ dir, log = console, rng = Math.random }) {
   let data = emptyState()
   let chain = Promise.resolve()
   const file = path.join(dir, 'state.json')
@@ -188,7 +219,10 @@ export function createStore ({ dir, log = console }) {
         record.tagIds = [...new Set(tagIds.filter(id => typeof id === 'string' && tagById(id)))]
           .slice(0, MAX_TAGS_PER_SESSION)
       }
-      if (Array.isArray(inlineTags)) record.inlineTags = normalizeInlineTags(inlineTags)
+      if (Array.isArray(inlineTags)) {
+        record.inlineTags = normalizeInlineTags(inlineTags, parsed =>
+          pickTagColor({ tags: data.tags, extra: parsed, rng }))
+      }
       if (typeof done === 'boolean') record.done = done
       data.version += 1
       await persist()
@@ -203,7 +237,7 @@ export function createStore ({ dir, log = console }) {
       const tag = {
         id: randomUUID(),
         name: clean,
-        color: normalizeColor(color),
+        color: parseColor(color) ?? pickTagColor({ tags: data.tags, rng }),
         order: data.tags.length,
         createdAt: Date.now(),
       }
@@ -264,18 +298,22 @@ export function createStore ({ dir, log = console }) {
       for (const raw of pack.tags) {
         let name
         try { name = normalizeName(raw?.name) } catch { report.skipped.push(String(raw?.name ?? '')); continue }
-        const color = normalizeColor(raw?.color)
+        const incoming = parseColor(raw?.color)
         const existing = tagByName(name)
         if (!existing) {
           data.tags.push({
-            id: randomUUID(), name, color, order: data.tags.length, createdAt: Date.now(),
+            id: randomUUID(),
+            name,
+            color: incoming ?? pickTagColor({ tags: data.tags, rng }),
+            order: data.tags.length,
+            createdAt: Date.now(),
           })
           report.added.push(name)
           changed = true
-        } else if (existing.color === color) {
+        } else if (incoming === null || existing.color === incoming) {
           report.skipped.push(name)
         } else {
-          report.conflicts.push({ name, local: existing.color, incoming: color })
+          report.conflicts.push({ name, local: existing.color, incoming })
         }
       }
       if (changed) {

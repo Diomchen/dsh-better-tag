@@ -5,7 +5,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 
-import { createStore } from '../src/store.js'
+import { createStore, PALETTE } from '../src/store.js'
 import { registerLocalApi } from '../src/http.js'
 
 const logger = { warn: () => {} }
@@ -115,5 +115,21 @@ test('bad JSON returns 500 without crashing the server', async () => {
     assert.equal(response.status, 500)
     const state = await call(base, '/state')
     assert.equal(state.status, 200)
+  })
+})
+
+
+test('a tag created without a color gets a palette color', async () => {
+  await withServer(async ({ base }) => {
+    const created = await call(base, '/tags', { method: 'POST', body: { name: '自动色' } })
+    assert.equal(created.status, 200)
+    assert.ok(PALETTE.includes(created.json.tag.color))
+
+    const recolored = await call(base, '/tags/update', {
+      method: 'POST',
+      body: { id: created.json.tag.id, color: '#ffb86b' },
+    })
+    assert.equal(recolored.status, 200)
+    assert.equal(recolored.json.tags.find(tag => tag.id === created.json.tag.id).color, '#ffb86b')
   })
 })

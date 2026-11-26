@@ -19,6 +19,16 @@ window.__ModuleLoader__.load({
     const API = '/dsh-better-tag/v1'
     const HEADER = { 'x-better-tag': '1' }
 
+    /** Must match PALETTE in src/store.js; the browser module cannot import it. */
+    const PALETTE = [
+      '#7c9cff', '#f0a35e', '#67c98a', '#c084fc',
+      '#5ec8d8', '#6ea8fe', '#f07a7a', '#9aa0ad',
+      '#b58cff', '#e0a3ff', '#ffb86b', '#8fd694',
+    ]
+
+    /** Below this tag count a filter costs more than it saves. */
+    const SEARCH_THRESHOLD = 8
+
     const DICTS = {
       zh: {
         nav: '会话总览',
@@ -40,9 +50,15 @@ window.__ModuleLoader__.load({
         loadError: '标签服务未就绪',
         retry: '重试',
         picker: '标签',
-        create: '新建',
-        createPlaceholder: '新标签名',
         manageFromPicker: '管理标签…',
+        searchOrCreate: '搜索或新建标签',
+        searchPlaceholder: '搜索标签',
+        noMatch: '没有匹配的标签',
+        createNamed: '新建「{name}」',
+        selectedCount: '已选 {n}',
+        changeColor: '改颜色',
+        randomColor: '随机',
+        clearSearch: '清除搜索',
         tempSection: '临时标签 · 不入标签库',
         tempPlaceholder: '临时标签名',
         tempCreate: '临时',
@@ -92,9 +108,15 @@ window.__ModuleLoader__.load({
         loadError: 'Tag service unavailable',
         retry: 'Retry',
         picker: 'Tags',
-        create: 'Add',
-        createPlaceholder: 'New tag name',
         manageFromPicker: 'Manage tags…',
+        searchOrCreate: 'Search or create a tag',
+        searchPlaceholder: 'Search tags',
+        noMatch: 'No matching tags',
+        createNamed: 'New "{name}"',
+        selectedCount: '{n} selected',
+        changeColor: 'Change color',
+        randomColor: 'Random',
+        clearSearch: 'Clear search',
         tempSection: 'Temporary · not in library',
         tempPlaceholder: 'Temporary tag name',
         tempCreate: 'Temp',
@@ -266,9 +288,7 @@ window.__ModuleLoader__.load({
       const current = inlineTagsOf(sessionId)
       if (current.some(tag => tag.name.toLowerCase() === name.toLowerCase())) return true
       if (current.length >= 8) { notify(t('tempLimit')); return false }
-      const palette = ['#7c9cff', '#f0a35e', '#67c98a', '#c084fc', '#5ec8d8', '#6ea8fe', '#f07a7a', '#9aa0ad', '#b58cff', '#e0a3ff', '#ffb86b', '#8fd694']
-      const color = palette[(current.length + (view.sessions[sessionId]?.tagIds.length ?? 0)) % palette.length]
-      return saveSession(sessionId, { inlineTags: [...current, { name, color }] })
+      return saveSession(sessionId, { inlineTags: [...current, { name, color: chooseColor(current) }] })
     }
 
     async function removeInlineTag (sessionId, name) {
@@ -339,6 +359,26 @@ window.__ModuleLoader__.load({
       return view.sessions[sessionId]?.inlineTags ?? []
     }
 
+    /**
+     * Pick the palette color used least by the library plus the given extra
+     * tags. Mirrors pickTagColor in src/store.js so temp tags and library tags
+     * spread over the palette the same way.
+     */
+    function chooseColor (extra = [], exclude = null) {
+      const counts = new Map()
+      for (const tag of [...view.tags, ...extra]) {
+        if (typeof tag?.color !== 'string') continue
+        counts.set(tag.color, (counts.get(tag.color) ?? 0) + 1)
+      }
+      const scored = PALETTE
+        .filter(color => color !== exclude)
+        .map(color => ({ color, count: counts.get(color) ?? 0 }))
+      if (scored.length === 0) return PALETTE[0]
+      const least = Math.min(...scored.map(entry => entry.count))
+      const pool = scored.filter(entry => entry.count === least).map(entry => entry.color)
+      return pool[Math.floor(Math.random() * pool.length)] ?? PALETTE[0]
+    }
+
     /* ------------------------------------------------------------------ */
     /* picker + panel UI state                                             */
     /* ------------------------------------------------------------------ */
@@ -359,7 +399,7 @@ window.__ModuleLoader__.load({
     }
     const useOverlay = () => useSyncExternalStore(subscribeOverlay, () => overlaySnapshot, () => overlaySnapshot)
 
-    let ui = { manager: false, importOpen: false }
+    let ui = { manager: false, importOpen: false, managerQuery: '' }
     let uiSnapshot = ui
     const uiListeners = new Set()
     function commitUi (next) {
@@ -419,6 +459,50 @@ window.__ModuleLoader__.load({
         return h('span', { className, style, title: title ?? tag.name }, tag.name)
       }
       return h('button', { type: 'button', className, style, title: title ?? tag.name, onClick }, tag.name)
+    }
+
+    /**
+     * One tag's color dot plus its inline palette. The dot stays visible so a
+     * recolor is one click away wherever the tag is listed; the palette is
+     * inline (not absolutely positioned) so a scrolling list never clips it.
+     */
+    function ColorControl ({ tag, onPick }) {
+      const [open, setOpen] = useState(false)
+      const wrapRef = useRef(null)
+      useEffect(() => {
+        if (!open) return undefined
+        const onDown = event => {
+          if (wrapRef.current !== null && !wrapRef.current.contains(event.target)) setOpen(false)
+        }
+        document.addEventListener('mousedown', onDown)
+        return () => document.removeEventListener('mousedown', onDown)
+      }, [open])
+      return h('span', { className: 'bt-color-wrap', ref: wrapRef },
+        h('button', {
+          type: 'button',
+          className: 'bt-color-dot' + (open ? ' is-open' : ''),
+          style: { background: tag.color },
+          title: `${t('changeColor')} · ${tag.name}`,
+          'aria-label': `${t('changeColor')} · ${tag.name}`,
+          'aria-expanded': open,
+          onClick: () => setOpen(value => !value),
+        }),
+        open
+          ? h('div', { className: 'bt-color-pop' },
+            PALETTE.map(color => h('button', {
+              key: color, type: 'button',
+              className: 'bt-color-swatch' + (tag.color === color ? ' is-on' : ''),
+              style: { background: color },
+              title: color,
+              'aria-label': color,
+              onClick: () => onPick(color),
+            })),
+            h('button', {
+              type: 'button', className: 'bt-color-random',
+              title: t('randomColor'),
+              onClick: () => onPick(chooseColor([], tag.color)),
+            }, t('randomColor')))
+          : null)
     }
 
     function useSessionMeta (sessionId) {
@@ -524,9 +608,12 @@ window.__ModuleLoader__.load({
     function PickerOverlay () {
       const current = useOverlay()
       const snap = useStore()
-      const [draft, setDraft] = useState('')
       const [tempDraft, setTempDraft] = useState('')
+      const [query, setQuery] = useState('')
       const notice = snap.notice
+      useEffect(() => {
+        if (current.open) setQuery('')
+      }, [current.open, current.sessionId])
       if (!current.open || current.sessionId === null) {
         return notice === null || notice === undefined
           ? null
@@ -535,47 +622,106 @@ window.__ModuleLoader__.load({
       const sessionId = current.sessionId
       const meta = snap.sessions[sessionId]
       const selected = new Set(meta?.tagIds ?? [])
+      const inline = inlineTagsOf(sessionId)
+      const queryName = query.trim()
+      const needle = queryName.toLowerCase()
+      const exactMatch = queryName !== '' && snap.tags.some(tag => tag.name.toLowerCase() === needle)
+      const canCreate = queryName !== '' && queryName.length <= 16 && !exactMatch
+      const matching = needle === ''
+        ? snap.tags
+        : snap.tags.filter(tag => tag.name.toLowerCase().includes(needle))
       const rect = current.rect
-      const width = 248
-      const height = Math.min(420, 84 + snap.tags.length * 28)
+      const width = 264
       const left = Math.max(8, Math.min(rect?.left ?? 16, window.innerWidth - width - 8))
-      const top = Math.min(rect?.bottom ?? 64, window.innerHeight - height - 8) + 6
+      // Keep the anchor stable while the search filters rows: the panel grows
+      // downward and scrolls instead of moving out from under the pointer.
+      const anchorTop = (rect?.bottom ?? 64) + 6
+      const top = window.innerHeight - anchorTop - 8 >= 240
+        ? anchorTop
+        : Math.max(8, window.innerHeight - 470 - 8)
+      const maxHeight = Math.max(240, Math.min(470, window.innerHeight - top - 8))
 
-      const create = async () => {
-        const name = draft.trim()
-        if (name === '') return
-        const tag = await createTag(name)
-        setDraft('')
-        if (tag !== null) await toggleTag(sessionId, tag.id)
+      const createFromQuery = async () => {
+        const name = queryName
+        if (name === '' || name.length > 16) return
+        const tag = await createTag(name, chooseColor())
+        if (tag === null) return
+        setQuery('')
+        await toggleTag(sessionId, tag.id)
       }
 
-      const head = h('div', { className: 'bt-picker-head' }, t('picker'))
-      const empty = snap.tags.length === 0 ? h('div', { className: 'bt-picker-empty' }, t('noTags')) : null
-      const rows = snap.tags.map(tag => h('button', {
-        key: tag.id, type: 'button',
+      const onSearchKeyDown = event => {
+        const composing = event.nativeEvent?.isComposing === true || event.nativeEvent?.keyCode === 229
+        if (event.key === 'Escape') {
+          if (composing) return
+          if (query !== '') { setQuery(''); return }
+          closePicker()
+          return
+        }
+        if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return
+        event.preventDefault()
+        if (composing || event.nativeEvent?.repeat === true) return
+        if (queryName === '') return
+        if (matching.length > 0) {
+          const first = matching[0]
+          if (!selected.has(first.id)) void toggleTag(sessionId, first.id)
+          setQuery('')
+          return
+        }
+        if (canCreate) void createFromQuery()
+      }
+
+      const head = h('div', { className: 'bt-picker-head' },
+        h('span', null, t('picker')),
+        h('span', { className: 'bt-picker-head-count' }, t('selectedCount', { n: selected.size })))
+      const search = h('div', { className: 'bt-search-row' },
+        h('input', {
+          className: 'bt-input bt-search', value: query, placeholder: t('searchOrCreate'),
+          maxLength: 16,
+          autoFocus: true,
+          'aria-label': t('searchOrCreate'),
+          onChange: event => setQuery(event.target.value),
+          onKeyDown: onSearchKeyDown,
+        }),
+        query === ''
+          ? null
+          : h('button', {
+            type: 'button', className: 'bt-search-clear',
+            title: t('clearSearch'), 'aria-label': t('clearSearch'),
+            onClick: () => setQuery(''),
+          }, '×'))
+      const empty = snap.tags.length === 0
+        ? h('div', { className: 'bt-picker-empty' }, t('noTags'))
+        : (needle !== '' && matching.length === 0
+            ? h('div', { className: 'bt-picker-empty' }, t('noMatch'))
+            : null)
+      const createQuery = canCreate
+        ? h('button', {
+          type: 'button', className: 'bt-picker-create-query',
+          onClick: () => { void createFromQuery() },
+        }, '+ ' + t('createNamed', { name: queryName }))
+        : null
+      const rows = matching.map(tag => h('div', {
+        key: tag.id,
         className: 'bt-pick-row' + (selected.has(tag.id) ? ' is-on' : ''),
+      },
+      h('button', {
+        type: 'button', className: 'bt-pick-main',
         onClick: () => { void toggleTag(sessionId, tag.id) },
       },
       h('span', { className: 'bt-swatch', style: { background: tag.color } }),
       h('span', { className: 'bt-pick-name' }, tag.name),
-      selected.has(tag.id) ? h('span', { className: 'bt-pick-check' }, h(CheckIcon, { size: 11 })) : null))
+      selected.has(tag.id) ? h('span', { className: 'bt-pick-check' }, h(CheckIcon, { size: 11 })) : null),
+      h(ColorControl, { tag, onPick: color => { void updateTag(tag.id, { color }) } })))
       const list = h('div', { className: 'bt-picker-list' }, rows)
-      const newRow = h('div', { className: 'bt-picker-new' },
-        h('input', {
-          className: 'bt-input', value: draft, placeholder: t('createPlaceholder'), maxLength: 16,
-          onChange: event => setDraft(event.target.value),
-          onKeyDown: event => { if (event.key === 'Enter') void create() },
-        }),
-        h('button', { type: 'button', className: 'bt-btn', onClick: () => { void create() } }, t('create')))
       const manage = h('button', {
         type: 'button', className: 'bt-link',
         onClick: () => {
           closePicker()
-          commitUi({ manager: true })
+          commitUi({ manager: true, managerQuery: query.trim() })
           selectPanel(PANEL_ID)
         },
       }, t('manageFromPicker'))
-      const inline = inlineTagsOf(sessionId)
       const tempSection = h('div', { className: 'bt-picker-sect' }, t('tempSection'))
       const tempRows = inline.map(tag => h('div', { key: `inline:${tag.name}`, className: 'bt-temp-row' },
         h('span', { className: 'bt-swatch is-temp', style: { borderColor: tag.color } }),
@@ -593,14 +739,21 @@ window.__ModuleLoader__.load({
         h('input', {
           className: 'bt-input', value: tempDraft, placeholder: t('tempPlaceholder'), maxLength: 16,
           onChange: event => setTempDraft(event.target.value),
-          onKeyDown: event => { if (event.key === 'Enter') { void addInlineTag(sessionId, tempDraft).then(() => setTempDraft('')) } },
+          onKeyDown: event => {
+            if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return
+            event.preventDefault()
+            if (event.nativeEvent?.isComposing === true || event.nativeEvent?.keyCode === 229 || event.nativeEvent?.repeat === true) return
+            void addInlineTag(sessionId, tempDraft).then(() => setTempDraft(''))
+          },
         }),
         h('button', {
           type: 'button', className: 'bt-btn',
           onClick: () => { void addInlineTag(sessionId, tempDraft).then(() => setTempDraft('')) },
         }, t('tempCreate')))
-      const picker = h('div', { className: 'bt-picker', style: { left, top, width } },
-        head, empty, list, newRow, tempSection, tempList, tempNew, manage)
+      const picker = h('div', {
+        className: 'bt-picker',
+        style: { left, top, width, maxHeight },
+      }, head, search, empty, list, createQuery, tempSection, tempList, tempNew, manage)
       const overlayElement = h('div', {
         className: 'bt-overlay',
         onMouseDown: event => { if (event.target === event.currentTarget) closePicker() },
@@ -698,7 +851,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'bt-toolbar' },
             h('button', { type: 'button', className: 'bt-btn', onClick: () => { void exportPack() } }, t('export')),
             h('button', { type: 'button', className: 'bt-btn', onClick: () => commitUi({ importOpen: true }) }, t('import')),
-            h('button', { type: 'button', className: 'bt-btn', onClick: () => commitUi({ manager: true }) }, t('manage')))),
+            h('button', { type: 'button', className: 'bt-btn', onClick: () => commitUi({ manager: true, managerQuery: '' }) }, t('manage')))),
         h('div', { className: 'bt-counts' },
           h('span', { className: 'bt-count is-pending' }, t('pending') + ' ', h('b', null, String(counts.pending))),
           h('span', { className: 'bt-count is-unread' }, t('unread') + ' ', h('b', null, String(counts.unread))),
@@ -743,36 +896,66 @@ window.__ModuleLoader__.load({
             added: report.added.length, skipped: report.skipped.length, conflicts: report.conflicts.length,
           }),
           h('button', { type: 'button', className: 'bt-link', onClick: () => setReport(null) }, t('close'))) : null,
-        currentUi.manager ? h(ManagerModal, { snap }) : null,
+        currentUi.manager ? h(ManagerModal, { snap, initialQuery: currentUi.managerQuery }) : null,
         currentUi.importOpen ? h(ImportModal, { importText, setImportText, onPick: pickFile, onRun: doImport, fileRef }) : null)
     }
 
-    function ManagerModal ({ snap }) {
+    function ManagerModal ({ snap, initialQuery = '' }) {
+      const [query, setQuery] = useState(initialQuery)
+      // Short lists scan faster without a filter; long lists need one. A query
+      // carried in from the picker keeps the field visible so the user does not
+      // lose the context they just typed.
+      const showSearch = snap.tags.length >= SEARCH_THRESHOLD || initialQuery !== '' || query !== ''
+      const needle = showSearch ? query.trim().toLowerCase() : ''
+      const matching = needle === ''
+        ? snap.tags
+        : snap.tags.filter(tag => tag.name.toLowerCase().includes(needle))
       return h('div', { className: 'bt-modal-back', onMouseDown: event => { if (event.target === event.currentTarget) commitUi({ manager: false }) } },
         h('div', { className: 'bt-modal' },
-          h('div', { className: 'bt-modal-head' }, t('manage')),
+          h('div', { className: 'bt-modal-head bt-manager-head' },
+            h('span', null, t('manage')),
+            showSearch && snap.tags.length > 0
+              ? h('span', { className: 'bt-manager-count' }, `${matching.length}/${snap.tags.length}`)
+              : null),
+          showSearch && snap.tags.length > 0
+            ? h('div', { className: 'bt-search-row bt-manager-search' },
+              h('input', {
+                className: 'bt-input bt-search', value: query, placeholder: t('searchPlaceholder'),
+                maxLength: 16,
+                autoFocus: true,
+                onChange: event => setQuery(event.target.value),
+              }),
+              query === ''
+                ? null
+                : h('button', {
+                  type: 'button', className: 'bt-search-clear',
+                  title: t('clearSearch'), 'aria-label': t('clearSearch'),
+                  onClick: () => setQuery(''),
+                }, '×'))
+            : null,
           h('div', { className: 'bt-manager' },
             snap.tags.length === 0 ? h('div', { className: 'bt-picker-empty' }, t('noTags')) : null,
-            snap.tags.map(tag => h('div', { key: tag.id, className: 'bt-manager-row' },
+            showSearch && snap.tags.length > 0 && matching.length === 0
+              ? h('div', { className: 'bt-picker-empty' }, t('noMatch'))
+              : null,
+            matching.map(tag => h('div', { key: tag.id, className: 'bt-manager-row' },
               h('input', {
                 className: 'bt-input bt-manager-name',
                 defaultValue: tag.name,
                 maxLength: 16,
                 onBlur: event => { if (event.target.value.trim() !== tag.name) void updateTag(tag.id, { name: event.target.value }) },
-                onKeyDown: event => { if (event.key === 'Enter') event.currentTarget.blur() },
+                onKeyDown: event => {
+                  if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return
+                  event.preventDefault()
+                  if (event.nativeEvent?.isComposing === true || event.nativeEvent?.keyCode === 229 || event.nativeEvent?.repeat === true) return
+                  event.currentTarget.blur()
+                },
               }),
-              h('span', { className: 'bt-swatches' },
-                ['#7c9cff', '#f0a35e', '#67c98a', '#c084fc', '#5ec8d8', '#6ea8fe', '#f07a7a', '#9aa0ad', '#b58cff', '#e0a3ff', '#ffb86b', '#8fd694'].map(color => h('button', {
-                  key: color, type: 'button',
-                  className: 'bt-swatch-btn' + (tag.color === color ? ' is-on' : ''),
-                  style: { background: color },
-                  'aria-label': color,
-                  onClick: () => { void updateTag(tag.id, { color }) },
-                })))),
-            h('button', {
-              type: 'button', className: 'bt-btn bt-danger',
-              onClick: () => { if (window.confirm(t('deleteConfirm'))) void deleteTag(tag.id) },
-            }, t('delete')))),
+              h(ColorControl, { tag, onPick: color => { void updateTag(tag.id, { color }) } }),
+              h('button', {
+                type: 'button', className: 'bt-btn bt-danger bt-manager-delete',
+                onClick: () => { if (window.confirm(t('deleteConfirm'))) void deleteTag(tag.id) },
+              }, t('delete'))))),
           h('div', { className: 'bt-modal-foot' },
             h('button', { type: 'button', className: 'bt-btn', onClick: () => commitUi({ manager: false }) }, t('close')))))
     }
@@ -838,14 +1021,31 @@ window.__ModuleLoader__.load({
 .bt-add-tag{height:20px;border:1px dashed var(--dsw-alias-border-2,rgba(127,127,127,.45));border-radius:4px;background:transparent;color:var(--dsw-alias-text-3,rgba(127,127,127,.9));font-size:11px;padding:0 7px;cursor:pointer;flex:0 0 auto}
 .bt-add-tag:hover{color:var(--dsw-alias-text-1,inherit)}
 .bt-overlay{position:fixed;inset:0;z-index:2147483000;pointer-events:auto}
-.bt-picker{position:fixed;background:var(--dsw-alias-bg-1,#1e2129);border:1px solid var(--dsw-alias-border-1,rgba(127,127,127,.3));border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.45);padding:8px;display:flex;flex-direction:column;gap:6px;max-height:440px}
-.bt-picker-head{font-size:11px;color:var(--dsw-alias-text-3,rgba(127,127,127,.9));padding:2px 4px}
-.bt-picker-list{overflow:auto;display:flex;flex-direction:column;gap:1px}
-.bt-pick-row{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--dsw-alias-text-1,inherit);font:inherit;font-size:12px;text-align:left;padding:6px;border-radius:5px;cursor:pointer}
+.bt-picker{position:fixed;background:var(--dsw-alias-bg-1,#1e2129);border:1px solid var(--dsw-alias-border-1,rgba(127,127,127,.3));border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.45);padding:8px;display:flex;flex-direction:column;gap:6px;max-height:min(470px,calc(100vh - 16px));overflow:auto}
+.bt-picker-head{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-text-3,rgba(127,127,127,.9));padding:2px 4px}
+.bt-picker-head-count{margin-left:auto;font-size:10px;color:var(--dsw-alias-text-3,rgba(127,127,127,.8))}
+.bt-search-row{display:flex;gap:4px;align-items:center}
+.bt-search{height:26px}
+.bt-search-clear{display:grid;place-items:center;width:22px;height:22px;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-text-3,rgba(127,127,127,.95));font:inherit;font-size:14px;line-height:1;cursor:pointer;flex:0 0 auto}
+.bt-search-clear:hover{background:var(--dsw-alias-bg-3,rgba(127,127,127,.16));color:var(--dsw-alias-text-1,inherit)}
+.bt-picker-list{flex:1 1 auto;min-height:0;max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:1px}
+.bt-pick-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:0 4px;border-radius:5px}
 .bt-pick-row:hover,.bt-pick-row.is-on{background:var(--dsw-alias-bg-3,rgba(127,127,127,.13))}
+.bt-pick-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:0;background:transparent;color:var(--dsw-alias-text-1,inherit);font:inherit;font-size:12px;text-align:left;padding:6px 2px;cursor:pointer}
 .bt-pick-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-pick-check{color:#4fbf82;display:flex}
 .bt-picker-empty{font-size:11.5px;color:var(--dsw-alias-text-3,rgba(127,127,127,.9));padding:6px}
+.bt-picker-create-query{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--dsw-alias-text-1,inherit);font:inherit;font-size:12px;text-align:left;padding:6px;border-radius:5px;cursor:pointer}
+.bt-picker-create-query:hover{background:var(--dsw-alias-bg-3,rgba(127,127,127,.13))}
+.bt-color-wrap{display:contents}
+.bt-color-dot{width:14px;height:14px;border-radius:50%;border:1px solid rgba(255,255,255,.35);padding:0;cursor:pointer;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.18)}
+.bt-color-dot:hover{transform:scale(1.15)}
+.bt-color-dot.is-open{box-shadow:0 0 0 2px var(--dsw-alias-text-3,rgba(127,127,127,.9))}
+.bt-color-pop{flex-basis:100%;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:5px 4px 5px 10px;margin:0 0 3px;border-top:1px dashed var(--dsw-alias-border-1,rgba(127,127,127,.22))}
+.bt-color-swatch{width:16px;height:16px;border-radius:4px;border:1px solid transparent;padding:0;cursor:pointer}
+.bt-color-swatch.is-on{outline:2px solid var(--dsw-alias-text-1,#fff);outline-offset:1px}
+.bt-color-random{height:16px;border-radius:4px;border:1px solid var(--dsw-alias-border-2,rgba(127,127,127,.4));background:transparent;color:var(--dsw-alias-text-3,rgba(127,127,127,.95));font:inherit;font-size:10px;line-height:1;padding:0 6px;cursor:pointer}
+.bt-color-random:hover{background:var(--dsw-alias-bg-3,rgba(127,127,127,.16));color:var(--dsw-alias-text-1,inherit)}
 .bt-picker-new{display:flex;gap:5px;border-top:1px solid var(--dsw-alias-border-1,rgba(127,127,127,.22));padding-top:7px}
 .bt-input{flex:1;min-width:0;height:26px;border-radius:5px;border:1px solid var(--dsw-alias-border-2,rgba(127,127,127,.4));background:var(--dsw-alias-bg-2,rgba(127,127,127,.08));color:var(--dsw-alias-text-1,inherit);font:inherit;font-size:12px;padding:0 8px}
 .bt-btn{height:26px;border-radius:5px;border:1px solid var(--dsw-alias-border-2,rgba(127,127,127,.4));background:var(--dsw-alias-bg-2,rgba(127,127,127,.08));color:var(--dsw-alias-text-1,inherit);font:inherit;font-size:12px;padding:0 10px;cursor:pointer}
@@ -888,11 +1088,13 @@ window.__ModuleLoader__.load({
 .bt-modal-head{font-size:14px;font-weight:600;margin-bottom:8px}
 .bt-modal-hint{font-size:12px;color:var(--dsw-alias-text-3,rgba(127,127,127,.9));margin-bottom:8px}
 .bt-manager{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto}
-.bt-manager-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bt-manager-head{display:flex;align-items:center;gap:8px}
+.bt-manager-count{margin-left:auto;font-size:11px;font-weight:400;color:var(--dsw-alias-text-3,rgba(127,127,127,.9))}
+.bt-manager-search{margin-bottom:8px}
+.bt-manager-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0}
 .bt-manager-name{flex:0 0 150px}
-.bt-swatches{display:flex;gap:4px;flex-wrap:wrap}
-.bt-swatch-btn{width:14px;height:14px;border-radius:3px;border:1px solid transparent;cursor:pointer;padding:0}
-.bt-swatch-btn.is-on{outline:2px solid var(--dsw-alias-text-1,#fff);outline-offset:1px}
+.bt-manager-delete{order:1;margin-left:auto}
+.bt-manager-row .bt-color-pop{order:2}
 .bt-textarea{width:100%;min-height:140px;border-radius:8px;border:1px solid var(--dsw-alias-border-2,rgba(127,127,127,.4));background:var(--dsw-alias-bg-2,rgba(127,127,127,.08));color:var(--dsw-alias-text-1,inherit);font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px;resize:vertical}
 .bt-modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
 `

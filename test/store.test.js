@@ -4,13 +4,13 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import { createStore } from '../src/store.js'
+import { createStore, PALETTE } from '../src/store.js'
 
 const logger = { warn: () => {} }
 
-async function tempStore () {
+async function tempStore (options = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'better-tag-store-'))
-  const store = createStore({ dir, log: logger })
+  const store = createStore({ dir, log: logger, ...options })
   await store.ready
   return { dir, store }
 }
@@ -120,4 +120,51 @@ test('fork copies inline tags but not the done stamp', async () => {
   const state = store.state()
   assert.deepEqual(state.sessions.child.inlineTags, [{ name: '临时', color: '#5ec8d8' }])
   assert.equal(state.sessions.child.done, false)
+})
+
+
+test('a new tag without a color takes the least-used palette slot', async () => {
+  const { store } = await tempStore({ rng: () => 0 })
+  await store.createTag({ name: 'a', color: '#7c9cff' })
+  await store.createTag({ name: 'b', color: '#7c9cff' })
+
+  const { tag } = await store.createTag({ name: 'c' })
+  assert.equal(tag.color, '#f0a35e')
+})
+
+test('a new tag without a color picks among the least-used palette colors', async () => {
+  const { store } = await tempStore({ rng: () => 0.99 })
+  for (let index = 0; index < PALETTE.length; index += 1) {
+    await store.createTag({ name: `tag-${index}`, color: PALETTE[index] })
+  }
+  await store.createTag({ name: 'extra-blue', color: '#7c9cff' })
+
+  const { tag } = await store.createTag({ name: 'next' })
+  assert.equal(tag.color, PALETTE[11])
+})
+
+test('an imported tag without a color is filled from the palette', async () => {
+  const { store } = await tempStore({ rng: () => 0 })
+  await store.createTag({ name: 'blue', color: '#7c9cff' })
+
+  const result = await store.importPack({ tags: [{ name: 'imported' }] })
+  assert.equal(result.state.tags.find(tag => tag.name === 'imported').color, '#f0a35e')
+})
+
+test('a colorless pack entry never conflicts with a local color', async () => {
+  const { store } = await tempStore()
+  await store.createTag({ name: 'keep', color: '#8fd694' })
+
+  const result = await store.importPack({ tags: [{ name: 'keep' }] })
+  assert.deepEqual(result.report.skipped, ['keep'])
+  assert.deepEqual(result.report.conflicts, [])
+  assert.equal(result.state.tags[0].color, '#8fd694')
+})
+
+test('an inline tag without a color gets a palette color instead of the first slot', async () => {
+  const { store } = await tempStore({ rng: () => 0 })
+  await store.createTag({ name: 'blue', color: '#7c9cff' })
+
+  const state = await store.setSession({ sessionId: 's1', inlineTags: [{ name: 'temp' }] })
+  assert.equal(state.sessions.s1.inlineTags[0].color, '#f0a35e')
 })
